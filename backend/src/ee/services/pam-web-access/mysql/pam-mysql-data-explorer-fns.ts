@@ -1,3 +1,5 @@
+import type mysql from "mysql2/promise";
+
 const skipQuoted = (sql: string, pos: number, quote: string): number => {
   let i = pos + 1;
   const backslashEscape = quote !== "`";
@@ -106,4 +108,18 @@ export const extractCommand = (sql: string): string => {
     pos += 1;
   }
   return sql.slice(start, pos).toUpperCase();
+};
+
+const STATEMENT_TIMEOUT_SECONDS = 30;
+
+// MariaDB has no max_execution_time; its equivalent is max_statement_time, in seconds
+export const getStatementTimeoutSetting = (serverVersion: string): string =>
+  /mariadb/i.test(serverVersion)
+    ? `max_statement_time = ${STATEMENT_TIMEOUT_SECONDS}`
+    : `max_execution_time = ${STATEMENT_TIMEOUT_SECONDS * 1000}`;
+
+export const setSessionVariables = async (conn: mysql.Connection, extraAssignments: string[] = []): Promise<void> => {
+  const [rows] = await conn.query<mysql.RowDataPacket[]>("SELECT VERSION() AS version");
+  const timeoutSetting = getStatementTimeoutSetting(String(rows[0]?.version ?? ""));
+  await conn.query(`SET SESSION ${[timeoutSetting, ...extraAssignments].join(", ")}`);
 };
